@@ -81,6 +81,9 @@ class JobStatus:
         metrics: Additional metrics.
         logs: Recent log lines.
         error: Error message if failed.
+        created_at: Timestamp when job was created.
+        started_at: Timestamp when training started.
+        completed_at: Timestamp when training completed.
     """
 
     status: str
@@ -93,6 +96,9 @@ class JobStatus:
     metrics: dict[str, float] = field(default_factory=dict)
     logs: list[str] = field(default_factory=list)
     error: str | None = None
+    created_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -107,6 +113,9 @@ class JobStatus:
             "metrics": self.metrics,
             "logs": self.logs,
             "error": self.error,
+            "created_at": self.created_at,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
         }
 
 

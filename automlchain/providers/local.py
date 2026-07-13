@@ -464,18 +464,29 @@ class LocalProvider(BaseProvider):
             status = "failed"
             progress = 0.0
 
-        # Try to read logs
+        # Try to read logs and job info
         logs = []
         output_dir = Path(job_info["output_dir"])
         job_info_file = output_dir / "job_info.json"
+
+        started_at = None
+        completed_at = None
+        job_start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(job_info["start_time"]))
 
         if job_info_file.exists():
             try:
                 with open(job_info_file) as f:
                     info = json.load(f)
-                    logs.append(f"Job info: {info.get('status', 'unknown')}")
+                    logs.append(f"Job status: {info.get('status', 'unknown')}")
+                    if info.get('start_time'):
+                        started_at = info['start_time']
+                    if info.get('end_time'):
+                        completed_at = info['end_time']
             except Exception:
                 pass
+
+        if status == "running" and not started_at:
+            started_at = job_start_time
 
         # Get error from process if failed
         error = None
@@ -492,6 +503,9 @@ class LocalProvider(BaseProvider):
             progress=float(progress),
             logs=logs[-5:] if logs else [],
             error=error,
+            created_at=job_start_time,
+            started_at=started_at,
+            completed_at=completed_at if status == "completed" else None,
         )
 
     def cancel_job(self, job_id: str) -> None:
