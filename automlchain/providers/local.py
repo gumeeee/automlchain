@@ -54,7 +54,8 @@ class LocalProvider(BaseProvider):
         api_key: str | None = None,  # Not used, but required by BaseProvider
         **kwargs: Any,
     ) -> None:
-        """
+        """Initialize LocalProvider.
+
         Args:
             model: HuggingFace model identifier.
             output_dir: Directory for saving outputs.
@@ -63,7 +64,6 @@ class LocalProvider(BaseProvider):
             api_key: Not used, kept for interface compatibility.
             **kwargs: Additional configuration.
         """
-        # api_key not used for local, but BaseProvider requires it
         super().__init__(api_key=api_key or "local")
         self.model = model
         self.output_dir = Path(output_dir)
@@ -99,7 +99,9 @@ class LocalProvider(BaseProvider):
                 f"Install with: pip install {' '.join(missing)}"
             )
 
-    def _create_training_script(self, job_id: str, config: dict[str, Any]) -> Path:
+    def _create_training_script(
+        self, job_id: str, config: dict[str, Any]
+    ) -> Path:
         """Create Python script for training.
 
         Args:
@@ -111,184 +113,208 @@ class LocalProvider(BaseProvider):
         """
         script_path = self.output_dir / f"train_{job_id}.py"
 
-        # Build the training script
-        script_content = f'''
-import json
-import os
-import sys
-import torch
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    TrainingArguments,
-    Trainer,
-    DataCollatorForLanguageModeling,
-)
-from peft import LoraConfig, get_peft_model, TaskType
-from datasets import load_dataset
+        # Escape single quotes in strings for the script
+        model_name = config["model"].replace("'", "\\'")
+        training_file = config["training_file"].replace("'", "\\'")
+        output_dir_base = str(self.output_dir).replace("'", "\\'")
+        max_seq_length = config.get("max_seq_length", 2048)
+        epochs = config.get("epochs", 3)
+        batch_size = config.get("batch_size", 4)
+        learning_rate = config.get("learning_rate", 1e-4)
+        lora_rank = config.get("lora_rank", 16)
+        lora_alpha = config.get("lora_alpha", 32)
+        warmup_steps = config.get("warmup_steps", 100)
+        grad_accum = config.get("gradient_accumulation_steps", 4)
+        use_qlora = self.use_qlora
 
-# Training configuration
-config = {json.dumps(config, indent=2)}
+        # Build script as regular string (not f-string to avoid escaping issues)
+        script_lines = [
+            '"""Training script for job {job_id}."""',
+            "",
+            "import json",
+            "import os",
+            "import sys",
+            "",
+            "# Training configuration",
+            f'config = {json.dumps(config, indent=2)}',
+            "",
+            "# Setup output",
+            f'output_dir = "{output_dir_base}/checkpoints/{job_id}"',
+            "os.makedirs(output_dir, exist_ok=True)",
+            "",
+            "# Write job metadata",
+            'with open(os.path.join(output_dir, "job_info.json"), "w") as f:',
+            "    json.dump({",
+            '        "job_id": "' + job_id + '",',
+            '        "status": "running",',
+            f'        "start_time": "{time.strftime("%Y-%m-%d %H:%M:%S")}",',
+            "    }, f, indent=2)",
+            "",
+            "def load_data(file_path):",
+            '    """Load and format dataset."""',
+            "    from datasets import load_dataset",
+            '    dataset = load_dataset("json", data_files=file_path, split="train")',
+            "",
+            "    def format_example(example):",
+            '        if "messages" in example:',
+            "            # Chat format",
+            '            text = ""',
+            "            for msg in example['messages']:",
+            '                role = msg.get("role", "user")',
+            '                content = msg.get("content", "")',
+            '                text += "<|" + role + "|>" + "\\n" + content + "\\n"',
+            '            text += "<|assistant|>" + "\\n"',
+            '        elif "input" in example and "output" in example:',
+            "            # Q&A format",
+            '            text = "### Input:\\n" + example["input"] + "\\n### Output:\\n" + example["output"] + "\\n"',
+            "        else:",
+            "            text = str(example)",
+            '        return {"text": text}',
+            "",
+            "    dataset = dataset.map(format_example)",
+            '    return dataset.remove_columns([c for c in dataset.column_names if c != "text"])',
+            "",
+            "def main():",
+            f'    print(f"Starting training job: {job_id}")',
+            f'    print(f"Model: {model_name}")',
+            f'    print(f"Dataset: {training_file}")',
+            "",
+            "    # Load tokenizer",
+            '    print("Loading tokenizer...")',
+            "    from transformers import AutoTokenizer",
+            f'    tokenizer = AutoTokenizer.from_pretrained("{model_name}")',
+            "    if tokenizer.pad_token is None:",
+            "        tokenizer.pad_token = tokenizer.eos_token",
+            "",
+            "    # Load dataset",
+            '    print("Loading dataset...")',
+            "    dataset = load_data('" + training_file + "')",
+            "",
+            "    # Split for evaluation",
+            "    dataset = dataset.train_test_split(test_size=0.1, seed=42)",
+            "",
+            "    # Tokenize",
+            "    def tokenize(example):",
+            "        return tokenizer(",
+            '            example["text"],',
+            f"            truncation=True,",
+            f"            max_length={max_seq_length},",
+            '            padding="max_length",',
+            "        )",
+            "",
+            '    print("Tokenizing dataset...")',
+            "    dataset = dataset.map(tokenize, batched=True, remove_columns=['text'])",
+            "",
+            "    # Load model",
+            '    print("Loading model...")',
+            "    import torch",
+            "    from transformers import AutoModelForCausalLM",
+            "",
+            "    load_kwargs = {",
+            '        "pretrained_model_name_or_path": "' + model_name + '",',
+            '        "trust_remote_code": True,',
+            "    }",
+            "",
+        ]
 
-# Setup output
-output_dir = "{self.output_dir}/checkpoints/{{job_id}}"
-os.makedirs(output_dir, exist_ok=True)
+        if use_qlora:
+            script_lines.extend([
+                "    if torch.cuda.is_available():",
+                "        from transformers import BitsAndBytesConfig",
+                '        print("Using QLoRA (4-bit quantization)...")',
+                "        load_kwargs['quantization_config'] = BitsAndBytesConfig(",
+                "            load_in_4bit=True,",
+                "            bnb_4bit_compute_dtype=torch.float16,",
+                "            bnb_4bit_use_double_quant=True,",
+                '            bnb_4bit_quant_type="nf4",',
+                "        )",
+            ])
 
-# Write job metadata
-with open(f"{{output_dir}}/job_info.json", "w") as f:
-    json.dump({{
-        "job_id": "{{job_id}}",
-        "status": "running",
-        "start_time": "{time.strftime("%Y-%m-%d %H:%M:%S")}",
-    }}, f)
+        script_lines.extend([
+            "",
+            "    model = AutoModelForCausalLM.from_pretrained(**load_kwargs)",
+            "",
+            "    # Setup LoRA",
+            '    print("Setting up LoRA...")',
+            "    from peft import LoraConfig, get_peft_model, TaskType",
+            "",
+            "    lora_config = LoraConfig(",
+            "        task_type=TaskType.CAUSAL_LM,",
+            f"        r={lora_rank},",
+            f"        lora_alpha={lora_alpha},",
+            "        lora_dropout=0.05,",
+            '        target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],',
+            "    )",
+            "",
+            "    model = get_peft_model(model, lora_config)",
+            '    model.print_trainable_parameters()',
+            "",
+            "    # Training arguments",
+            "    from transformers import TrainingArguments, Trainer, DataCollatorForLanguageModeling",
+            "",
+            "    training_args = TrainingArguments(",
+            f'        output_dir=output_dir,',
+            f"        num_train_epochs={epochs},",
+            f"        per_device_train_batch_size={batch_size},",
+            f"        gradient_accumulation_steps={grad_accum},",
+            f"        learning_rate={learning_rate},",
+            f"        warmup_steps={warmup_steps},",
+            "        logging_steps=10,",
+            "        save_steps=100,",
+            '        evaluation_strategy="steps",',
+            "        eval_steps=100,",
+            f"        fp16=torch.cuda.is_available() and " + str(use_qlora).lower() + ",",
+            '        remove_unused_columns=False,',
+            "        ddp_find_unused_parameters=False,",
+            "    )",
+            "",
+            "    # Data collator",
+            "    data_collator = DataCollatorForLanguageModeling(",
+            "        tokenizer=tokenizer,",
+            "        mlm=False,",
+            "    )",
+            "",
+            "    # Trainer",
+            '    print("Starting training...")',
+            "    trainer = Trainer(",
+            "        model=model,",
+            "        args=training_args,",
+            '        train_dataset=dataset["train"],',
+            '        eval_dataset=dataset["test"],"',
+            "        data_collator=data_collator,",
+            "    )",
+            "",
+            "    # Train",
+            "    trainer.train()",
+            "",
+            "    # Save final model",
+            '    print("Saving model...")',
+            '    model.save_pretrained(os.path.join(output_dir, "final"))',
+            "",
+            "    # Update job info",
+            '    with open(os.path.join(output_dir, "job_info.json"), "w") as f:',
+            "        json.dump({",
+            '            "job_id": "' + job_id + '",',
+            '            "status": "completed",',
+            '            "start_time": "' + time.strftime("%Y-%m-%d %H:%M:%S") + '",',
+            f'            "end_time": time.strftime("%Y-%m-%d %H:%M:%S"),',
+            '            "output_dir": os.path.join(output_dir, "final"),',
+            "        }, f, indent=2)",
+            "",
+            '    print(f"Training completed! Model saved to {output_dir}/final")',
+            "",
+            "if __name__ == '__main__':",
+            "    try:",
+            "        main()",
+            "    except Exception as e:",
+            '        print(f"Training failed: {e}", file=sys.stderr)',
+            "        import traceback",
+            "        traceback.print_exc()",
+            "        sys.exit(1)",
+        ])
 
-def load_data(file_path):
-    """Load and format dataset."""
-    from datasets import load_dataset
-    dataset = load_dataset("json", data_files=file_path, split="train")
+        script_content = "\n".join(script_lines)
 
-    def format_example(example):
-        if "messages" in example:
-            # Chat format
-            text = ""
-            for msg in example["messages"]:
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-                text += f"<|{{role}}|>\\n{{content}}\\n"
-            text += "<|assistant|>\\n"
-        elif "input" in example and "output" in example:
-            # Q&A format
-            text = f"### Input:\\n{{example['input']}}\\n### Output:\\n{{example['output']}}\\n"
-        else:
-            text = str(example)
-        return {{"text": text}}
-
-    dataset = dataset.map(format_example)
-    return dataset.remove_columns([c for c in dataset.column_names if c != "text"])
-
-def main():
-    print(f"Starting training job: {{job_id}}")
-    print(f"Model: {{config['model']}}")
-    print(f"Dataset: {{config['training_file']}}")
-
-    # Load tokenizer
-    print("Loading tokenizer...")
-    tokenizer = AutoTokenizer.from_pretrained(config["model"])
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    # Load dataset
-    print("Loading dataset...")
-    dataset = load_data(config["training_file"])
-
-    # Split for evaluation
-    dataset = dataset.train_test_split(test_size=0.1, seed=42)
-
-    # Tokenize
-    def tokenize(example):
-        return tokenizer(
-            example["text"],
-            truncation=True,
-            max_length={config.get("max_seq_length", 2048)},
-            padding="max_length",
-        )
-
-    print("Tokenizing dataset...")
-    dataset = dataset.map(tokenize, batched=True, remove_columns=["text"])
-
-    # Load model
-    print("Loading model...")
-    load_kwargs = {{
-        "pretrained_model_name_or_path": config["model"],
-        "trust_remote_code": True,
-    }}
-
-    if {self.use_qlora}:
-        load_kwargs["quantization_config"] = {{
-            "load_in_4bit": True,
-            "bnb_4bit_compute_dtype": torch.float16,
-            "bnb_4bit_use_double_quant": True,
-            "bnb_4bit_quant_type": "nf4",
-        }}
-
-    model = AutoModelForCausalLM.from_pretrained(**load_kwargs)
-
-    # Setup LoRA
-    print("Setting up LoRA...")
-    lora_config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        r={config.get("lora_rank", 16)},
-        lora_alpha={config.get("lora_alpha", 32)},
-        lora_dropout=0.05,
-        target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
-    )
-
-    model = get_peft_model(model, lora_config)
-    model.print_trainable_parameters()
-
-    # Training arguments
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-        num_train_epochs={config.get("epochs", 3)},
-        per_device_train_batch_size={config.get("batch_size", 4)},
-        gradient_accumulation_steps={config.get("gradient_accumulation_steps", 4)},
-        learning_rate={config.get("learning_rate", 1e-4)},
-        warmup_steps={config.get("warmup_steps", 100)},
-        logging_steps=10,
-        save_steps=100,
-        evaluation_strategy="steps",
-        eval_steps=100,
-        fp16={self.gpu},
-        remove_unused_columns=False,
-        ddp_find_unused_parameters=False,
-    )
-
-    # Data collator
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer,
-        mlm=False,
-    )
-
-    # Trainer
-    print("Starting training...")
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=dataset["train"],
-        eval_dataset=dataset["test"],
-        data_collator=data_collator,
-    )
-
-    # Train
-    trainer.train()
-
-    # Save final model
-    print("Saving model...")
-    model.save_pretrained(f"{{output_dir}}/final")
-
-    # Update job info
-    with open(f"{{output_dir}}/job_info.json", "w") as f:
-        json.dump({{
-            "job_id": "{{job_id}}",
-            "status": "completed",
-            "start_time": "{time.strftime("%Y-%m-%d %H:%M:%S")}",
-            "end_time": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "output_dir": f"{{output_dir}}/final",
-        }}, f, indent=2)
-
-    print(f"Training completed! Model saved to {{output_dir}}/final")
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"Training failed: {{e}}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
-'''.format(job_id=job_id)
-
-        # Write script to file
         with open(script_path, "w") as f:
             f.write(script_content)
 
@@ -426,7 +452,7 @@ if __name__ == "__main__":
         process = job_info["process"]
 
         # Check if process is still running
-        poll = process.poll()
+        poll = process.poll() if process else None
 
         if poll is None:
             status = "running"
@@ -454,12 +480,12 @@ if __name__ == "__main__":
         # Get error from process if failed
         error = None
         if status == "failed":
-            # Process exited with error
-            try:
-                stdout, _ = process.communicate(timeout=1)
-                error = f"Process exited with code {poll}: {stdout[-500:]}"
-            except Exception:
-                error = f"Process exited with code {poll}"
+            if process:
+                try:
+                    stdout, _ = process.communicate(timeout=1)
+                    error = f"Process exited with code {poll}: {stdout[-500:]}"
+                except Exception:
+                    error = f"Process exited with code {poll}"
 
         return JobStatus(
             status=status,
@@ -488,16 +514,14 @@ if __name__ == "__main__":
 
         logger.info("cancelling_job", job_id=job_id)
 
-        try:
-            # Try graceful termination first
-            process.terminate()
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            # Force kill if not terminated
-            process.kill()
-            process.wait()
+        if process:
+            try:
+                process.terminate()
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
 
-        # Update status
         job_info["process"] = None
         logger.info("job_cancelled", job_id=job_id)
 
@@ -518,7 +542,6 @@ if __name__ == "__main__":
         Returns:
             DeployedModel wrapper for local inference.
         """
-        # Determine model path
         if job_id and job_id in self._running_jobs:
             model_path = Path(self._running_jobs[job_id]["output_dir"]) / "final"
         elif model_path:
@@ -537,10 +560,10 @@ if __name__ == "__main__":
 
         deployed = DeployedModel(
             model_id=str(model_path),
-            endpoint=str(model_path),  # Local path
+            endpoint=str(model_path),
             provider="local",
             status="ready",
-            cost_per_1k_tokens=0.0,  # No API cost
+            cost_per_1k_tokens=0.0,
             metadata={"model_path": str(model_path)},
         )
 
@@ -568,7 +591,6 @@ if __name__ == "__main__":
         Returns:
             Generated text.
         """
-        # Determine model path
         if job_id and job_id in self._running_jobs:
             model_path = Path(self._running_jobs[job_id]["output_dir"]) / "final"
         elif model_path:
@@ -584,7 +606,6 @@ if __name__ == "__main__":
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
-            # Load model and tokenizer
             tokenizer = AutoTokenizer.from_pretrained(str(model_path))
             model = AutoModelForCausalLM.from_pretrained(
                 str(model_path),
@@ -592,14 +613,12 @@ if __name__ == "__main__":
                 torch_dtype="auto",
             )
 
-            # Create pipeline
             pipe = pipeline(
                 "text-generation",
                 model=model,
                 tokenizer=tokenizer,
             )
 
-            # Generate
             result = pipe(
                 prompt,
                 max_new_tokens=max_tokens,

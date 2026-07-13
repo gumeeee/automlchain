@@ -151,6 +151,10 @@ class ProviderConfig:
         if self.api_key:
             return self.api_key
 
+        # Local provider doesn't need API key
+        if self.provider_type == ProviderType.LOCAL:
+            return "local"
+
         env_vars = {
             ProviderType.REPLICATE: "REPLICATE_API_TOKEN",
             ProviderType.TOGETHER: "TOGETHER_API_KEY",

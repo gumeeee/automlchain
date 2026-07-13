@@ -299,13 +299,17 @@ class AutoMLPipeline:
 
         logger.info("starting_training", dataset_size=len(dataset))
 
-        # Extract hyperparameters from kwargs (exclude non-hyperparams)
+        # Extract hyperparameters and model from kwargs
         from .config import HyperParams
 
         hyperparam_fields = {
             "learning_rate", "lora_rank", "lora_alpha", "lora_dropout",
             "batch_size", "epochs", "warmup_steps", "max_seq_length", "weight_decay"
         }
+
+        # Get model - from kwargs first, then config
+        model = kwargs.pop("model", None) or self.config.provider.model
+
         hyperparams_kwargs = {k: v for k, v in kwargs.items() if k in hyperparam_fields}
         hyperparams = HyperParams(**hyperparams_kwargs) if hyperparams_kwargs else self.config.hyperparameters
 
@@ -313,7 +317,7 @@ class AutoMLPipeline:
             dataset=dataset,
             template=template,
             hyperparams=hyperparams,
-            model=self.config.provider.model,
+            model=model,
         )
 
         self._current_job = job
