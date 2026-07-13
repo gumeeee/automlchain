@@ -339,7 +339,8 @@ class AutoMLPipeline:
             from .exceptions import ValidationError
             raise ValidationError("No job_id provided and no current job")
 
-        return self.training_orchestrator.get_status(job_id)
+        # Get status directly from provider (returns JobStatus)
+        return self.provider.get_job_status(job_id)
 
     def cancel(self, job_id: str | None = None) -> None:
         """Cancel a training job.
