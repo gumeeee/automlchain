@@ -138,17 +138,27 @@ class TrainingOrchestrator:
         Returns:
             Path or URL to training data.
         """
+        # Handle both Dataset objects and lists
+        if hasattr(dataset, 'path'):
+            # It's a Dataset object
+            dataset_path = dataset.path
+            dataset_data = dataset.data
+        else:
+            # It's a list
+            dataset_path = None
+            dataset_data = dataset
+
         # For now, return the dataset path
         # In real implementation, would upload to provider
-        if dataset.path:
-            return dataset.path
+        if dataset_path:
+            return dataset_path
 
         # If data is in memory, would upload to temporary storage
         import tempfile
         import json
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            for sample in dataset.data:
+            for sample in dataset_data:
                 if template:
                     # Format using template
                     formatted = template.format(**sample)

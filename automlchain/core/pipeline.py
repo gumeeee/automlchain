@@ -55,17 +55,28 @@ class AutoMLPipeline:
         self._setup_logging()
 
         # Handle provider argument
+        from .config import ProviderType
+        from ..providers.base import BaseProvider
+
         if isinstance(provider, str):
-            provider_config = ProviderConfig(provider_type=provider)
+            # Map string to ProviderType
+            if provider.lower() == "mock":
+                provider_config = ProviderConfig(provider_type=ProviderType.REPLICATE, api_key="mock-key")
+            else:
+                provider_config = ProviderConfig(provider_type=ProviderType(provider))
             provider_name = provider
-        elif hasattr(provider, 'name'):
-            # Provider object (e.g., MockProvider)
-            provider_config = ProviderConfig(provider_type=provider.name)
+        elif isinstance(provider, BaseProvider):
+            # Already a provider instance (e.g., MockProvider)
+            # Store it directly and use its name
+            self._provider = provider
+            provider_config = ProviderConfig(provider_type=ProviderType.REPLICATE, api_key=provider.api_key)
             provider_name = provider.name
         else:
             # Already a ProviderConfig
             provider_config = provider
             provider_name = getattr(provider, 'provider_type', 'unknown')
+            if hasattr(provider_name, 'value'):
+                provider_name = provider_name.value
 
         # Build config
         if config is None:
@@ -115,11 +126,24 @@ class AutoMLPipeline:
     @property
     def provider(self) -> BaseProvider:
         """Get the configured provider instance."""
-        if self._provider is None:
-            self._provider = self.provider_registry.get(
-                self.config.provider.provider_type.value,
-                api_key=self.config.provider.get_api_key(),
-            )
+        # If provider was passed as instance, return it directly
+        if self._provider is not None:
+            return self._provider
+
+        # Otherwise, get from registry
+        from ..providers.registry import ProviderRegistry
+        registry = ProviderRegistry()
+
+        # Handle both ProviderConfig objects and provider name strings
+        if isinstance(self.config.provider, str):
+            provider_name = self.config.provider
+        else:
+            provider_name = self.config.provider.provider_type.value
+
+        self._provider = registry.get(
+            provider_name,
+            api_key=self.config.provider.get_api_key() if hasattr(self.config.provider, 'get_api_key') else None,
+        )
         return self._provider
 
     @property
@@ -253,9 +277,15 @@ class AutoMLPipeline:
 
         logger.info("starting_training", dataset_size=len(dataset))
 
-        # Merge hyperparameters with overrides
+        # Extract hyperparameters from kwargs (exclude non-hyperparams)
         from .config import HyperParams
-        hyperparams = HyperParams(**kwargs) if kwargs else self.config.hyperparameters
+
+        hyperparam_fields = {
+            "learning_rate", "lora_rank", "lora_alpha", "lora_dropout",
+            "batch_size", "epochs", "warmup_steps", "max_seq_length", "weight_decay"
+        }
+        hyperparams_kwargs = {k: v for k, v in kwargs.items() if k in hyperparam_fields}
+        hyperparams = HyperParams(**hyperparams_kwargs) if hyperparams_kwargs else self.config.hyperparameters
 
         job = self.training_orchestrator.train(
             dataset=dataset,
