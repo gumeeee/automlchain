@@ -59,8 +59,15 @@ class AutoMLPipeline:
         # Handle provider argument
         if isinstance(provider, str):
             provider_config = ProviderConfig(provider_type=provider)
+            provider_name = provider
+        elif hasattr(provider, 'name'):
+            # Provider object (e.g., MockProvider)
+            provider_config = ProviderConfig(provider_type=provider.name)
+            provider_name = provider.name
         else:
+            # Already a ProviderConfig
             provider_config = provider
+            provider_name = getattr(provider, 'provider_type', 'unknown')
 
         # Build config
         if config is None:
@@ -87,7 +94,7 @@ class AutoMLPipeline:
 
         logger.info(
             "pipeline_initialized",
-            provider=provider_config.provider_type.value,
+            provider=provider_name,
         )
 
     def _setup_logging(self) -> None:
