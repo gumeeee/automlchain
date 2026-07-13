@@ -86,10 +86,28 @@ automlchain evaluate --predictions preds.jsonl --references refs.jsonl
 
 | Provider | Status | Notes |
 |----------|--------|-------|
-| Replicate | ✅ Phase 1 | Primary provider for MVP |
+| Replicate | ✅ Phase 1 | Primary for inference |
+| Together AI | ✅ Phase 2 | Fine-tuning cloud (simpler API) |
+| Local | ✅ Phase 2 | Fine-tuning on your GPU (no API costs) |
 | Mock | ✅ | For testing without API calls |
-| Together AI | 🔜 Phase 2 | Planned |
-| Anyscale | 🔜 Phase 2 | Planned |
+
+### Choosing a Provider
+
+| Use Case | Recommended Provider |
+|----------|---------------------|
+| Quick test, no GPU | Together AI |
+| Production fine-tuning | Together AI |
+| Privacy/data on-premise | Local |
+| Maximum control | Local |
+| Just inference | Replicate |
+
+### Local Provider Requirements
+
+```bash
+pip install torch transformers peft accelerate datasets bitsandbytes
+```
+
+See [notebooks/test_local_provider.ipynb](notebooks/test_local_provider.ipynb) for a complete example.
 
 ## Supported Metrics (MVP)
 
