@@ -47,7 +47,7 @@ class LocalProvider(BaseProvider):
     def __init__(
         self,
         *,
-        model: str = "TinyLlama/TinyLlama-1.1B",
+        model: str = "TinyLlama/TinyLlama_v1.1",
         output_dir: str = "./outputs",
         gpu: bool = True,
         use_qlora: bool = True,
@@ -58,6 +58,7 @@ class LocalProvider(BaseProvider):
 
         Args:
             model: HuggingFace model identifier.
+                  Recommended: TinyLlama/TinyLlama_v1.1, Qwen/Qwen2-0.5B
             output_dir: Directory for saving outputs.
             gpu: Use GPU if available.
             use_qlora: Use QLoRA (quantized) for lower memory.
@@ -113,10 +114,13 @@ class LocalProvider(BaseProvider):
         """
         script_path = self.output_dir / f"train_{job_id}.py"
 
-        # Escape single quotes in strings for the script
-        model_name = config["model"].replace("'", "\\'")
-        training_file = config["training_file"].replace("'", "\\'")
-        output_dir_base = str(self.output_dir).replace("'", "\\'")
+        # Extract config values
+        model_name = config["model"]
+        training_file = config["training_file"]
+        output_dir_base = str(self.output_dir)
+
+        # Use triple quotes for strings that might have special characters
+        model_name_quoted = '"""' + model_name + '"""'
         max_seq_length = config.get("max_seq_length", 2048)
         epochs = config.get("epochs", 3)
         batch_size = config.get("batch_size", 4)
@@ -139,7 +143,7 @@ class LocalProvider(BaseProvider):
             f'config = {json.dumps(config, indent=2)}',
             "",
             "# Setup output",
-            f'output_dir = "{output_dir_base}/checkpoints/{job_id}"',
+            f'output_dir = "{output_dir_base}/checkpoints/' + job_id + '"',
             "os.makedirs(output_dir, exist_ok=True)",
             "",
             "# Write job metadata",
@@ -175,14 +179,14 @@ class LocalProvider(BaseProvider):
             '    return dataset.remove_columns([c for c in dataset.column_names if c != "text"])',
             "",
             "def main():",
-            f'    print(f"Starting training job: {job_id}")',
-            f'    print(f"Model: {model_name}")',
-            f'    print(f"Dataset: {training_file}")',
+            f"    print(f'Starting training job: {job_id}')",
+            f"    print(f'Model: {model_name}')",
+            f"    print(f'Dataset: {training_file}')",
             "",
             "    # Load tokenizer",
-            '    print("Loading tokenizer...")',
+            "    print('Loading tokenizer...')",
             "    from transformers import AutoTokenizer",
-            f'    tokenizer = AutoTokenizer.from_pretrained("{model_name}")',
+            "    tokenizer = AutoTokenizer.from_pretrained(" + model_name_quoted + ")",
             "    if tokenizer.pad_token is None:",
             "        tokenizer.pad_token = tokenizer.eos_token",
             "",
@@ -211,8 +215,8 @@ class LocalProvider(BaseProvider):
             "    from transformers import AutoModelForCausalLM",
             "",
             "    load_kwargs = {",
-            '        "pretrained_model_name_or_path": "' + model_name + '",',
-            '        "trust_remote_code": True,',
+            "        'pretrained_model_name_or_path': " + model_name_quoted + ",",
+            "        'trust_remote_code': True,",
             "    }",
             "",
         ]
