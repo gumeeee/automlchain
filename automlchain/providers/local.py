@@ -280,7 +280,7 @@ class LocalProvider(BaseProvider):
             "        model=model,",
             "        args=training_args,",
             '        train_dataset=dataset["train"],',
-            '        eval_dataset=dataset["test"],"',
+            '        eval_dataset=dataset["test"],',
             "        data_collator=data_collator,",
             "    )",
             "",
@@ -454,16 +454,6 @@ class LocalProvider(BaseProvider):
         # Check if process is still running
         poll = process.poll() if process else None
 
-        if poll is None:
-            status = "running"
-            progress = 50.0  # Estimate since we can't easily parse logs
-        elif poll == 0:
-            status = "completed"
-            progress = 100.0
-        else:
-            status = "failed"
-            progress = 0.0
-
         # Try to read logs and job info
         logs = []
         output_dir = Path(job_info["output_dir"])
@@ -472,6 +462,16 @@ class LocalProvider(BaseProvider):
         started_at = None
         completed_at = None
         job_start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(job_info["start_time"]))
+
+        # Initialize status and progress
+        if poll is None:
+            status = "running"
+        elif poll == 0:
+            status = "completed"
+        else:
+            status = "failed"
+
+        progress = 0.0
 
         if job_info_file.exists():
             try:
@@ -485,8 +485,34 @@ class LocalProvider(BaseProvider):
             except Exception:
                 pass
 
-        if status == "running" and not started_at:
-            started_at = job_start_time
+        # Try to read trainer logs for progress
+        log_file = output_dir / "trainer_state.json"
+        if log_file.exists():
+            try:
+                with open(log_file) as f:
+                    state = json.load(f)
+                    # Get total steps from trainer state
+                    total_steps = state.get("max_steps", 0)
+                    last_step = state.get("last_step", 0)
+                    if total_steps > 0:
+                        progress = min((last_step / total_steps) * 100, 99)
+                    elif status == "running":
+                        progress = 50.0  # Estimate if no trainer state
+            except Exception:
+                pass
+
+        # If still running but no progress info, estimate
+        if status == "running" and progress == 0.0:
+            elapsed = time.time() - job_info["start_time"]
+            # Assume ~5 minutes for initial setup, then estimate progress
+            if elapsed < 60:
+                progress = 0.0  # Just starting
+            else:
+                progress = 10.0  # Loading/downloading
+
+        if status == "completed":
+            progress = 100.0
+            completed_at = completed_at or time.strftime("%Y-%m-%d %H:%M:%S")
 
         # Get error from process if failed
         error = None
@@ -497,6 +523,9 @@ class LocalProvider(BaseProvider):
                     error = f"Process exited with code {poll}: {stdout[-500:]}"
                 except Exception:
                     error = f"Process exited with code {poll}"
+
+        if status == "running" and not started_at:
+            started_at = job_start_time
 
         return JobStatus(
             status=status,
