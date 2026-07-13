@@ -116,17 +116,33 @@ class ReplicateProvider(BaseProvider):
             payload["webhook"] = webhook_url or self.webhook_url
 
         try:
-            # In real implementation, this would be:
-            # response = self.client.post(f"{self.BASE_URL}/v1/trainings", json=payload)
-            # data = response.json()
-            # job_id = data["id"]
+            # Make real API call to create training
+            response = self.client.post(
+                f"{self.BASE_URL}/v1/trainings",
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
 
-            # Mock response for development
+            # Extract job info from response
+            job_id = data["id"]
+            status = data.get("status", "queued")
+
+            # Get training output if completed
+            checkpoint_url = None
+            if status == "succeeded":
+                checkpoint_url = data.get("output")
+
             job = TrainingJob(
                 job_id=job_id,
                 provider="replicate",
                 model=model,
-                status="queued",
+                status=status,
+                created_at=data.get("created_at"),
+                started_at=data.get("started_at"),
+                completed_at=data.get("completed_at"),
+                cost=float(data.get("usage", {}).get("cost", 0) or 0),
+                checkpoint_url=checkpoint_url,
                 metadata={
                     "replicate_model": replicate_model,
                     "hyperparameters": hyperparameters,
@@ -182,19 +198,27 @@ class ReplicateProvider(BaseProvider):
         logger.debug("checking_job_status", job_id=job_id)
 
         try:
-            # In real implementation:
-            # response = self.client.get(f"{self.BASE_URL}/v1/trainings/{job_id}")
-            # data = response.json()
+            # Make real API call to get training status
+            response = self.client.get(f"{self.BASE_URL}/v1/trainings/{job_id}")
+            response.raise_for_status()
+            data = response.json()
 
-            # Mock response
+            # Parse status and progress
+            api_status = data.get("status", "unknown")
+            progress = data.get("progress", 0) or 0.0
+
+            # Get logs if available
+            logs = data.get("logs", "")
+
+            # Extract metrics
+            metrics = data.get("metrics", {})
+
             status = JobStatus(
-                status="running",
-                progress=50.0,
-                epoch=1,
-                total_epochs=3,
-                step=500,
-                total_steps=1000,
-                loss=0.5,
+                status=api_status,
+                progress=float(progress),
+                metrics=metrics,
+                logs=[logs] if logs else [],
+                error=data.get("error"),
             )
 
             return status
@@ -228,9 +252,9 @@ class ReplicateProvider(BaseProvider):
         logger.info("cancelling_job", job_id=job_id)
 
         try:
-            # In real implementation:
-            # response = self.client.post(f"{self.BASE_URL}/v1/trainings/{job_id}/cancel")
-            pass
+            # Make real API call to cancel training
+            response = self.client.post(f"{self.BASE_URL}/v1/trainings/{job_id}/cancel")
+            response.raise_for_status()
 
             logger.info("job_cancelled", job_id=job_id)
 
