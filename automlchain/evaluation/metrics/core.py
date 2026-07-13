@@ -81,7 +81,6 @@ class RMSE(BaseMetric):
         if not predictions:
             return 0.0
 
-        n = len(predictions)
         squared_errors = []
 
         for pred, ref in zip(predictions, references):

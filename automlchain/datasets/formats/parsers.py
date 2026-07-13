@@ -6,7 +6,7 @@ import csv
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import orjson
 
@@ -109,9 +109,14 @@ class CSVParser(FormatParser):
         # Handle gzipped CSV
         if path.suffix == ".gz":
             import gzip
-            opener = lambda: gzip.open(path, "rt", encoding=enc)
+
+            def opener() -> Any:
+                return gzip.open(path, "rt", encoding=enc)  # type: ignore[return-value]
+
         else:
-            opener = lambda: open(path, "r", encoding=enc)
+
+            def opener() -> Any:
+                return open(path, "r", encoding=enc)  # type: ignore[return-value]
 
         with opener() as f:
             reader = csv.DictReader(f, delimiter=delimiter)

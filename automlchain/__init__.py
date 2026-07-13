@@ -100,7 +100,8 @@ __all__ = [
     "ProviderError",
     "ConfigurationError",
     "APIKeyError",
-    "TimeoutError",
+    "AutoMLChainTimeoutError",
+    "TimeoutError",  # Deprecated alias
     "JobCancelledError",
     # Datasets
     "Dataset",

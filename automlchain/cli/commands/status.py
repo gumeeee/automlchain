@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
-from typing import Any
 
 import click
 
-from ...core import AutoMLPipeline
-from ...training.jobs import JobState
 
 
 @click.command("status")
@@ -98,7 +96,7 @@ def _check_status(
             click.echo(f"  Loss:      {status.loss:.4f}")
 
         if status.logs:
-            click.echo(f"\nRecent Logs:")
+            click.echo("\nRecent Logs:")
             for log in status.logs[-5:]:
                 click.echo(f"  {log}")
 
@@ -126,7 +124,6 @@ def _watch_status(
         provider = ProviderRegistry.get(provider_name, api_key=api_key)
 
         terminal_states = {"completed", "failed", "cancelled", "canceled"}
-        last_status = None
 
         click.echo(f"Watching job {job_id}... (Ctrl+C to stop)")
         click.echo("-" * 50)
@@ -151,7 +148,6 @@ def _watch_status(
                         click.echo(click.style("⚠ Training cancelled", fg="yellow"))
                     break
 
-                last_status = status
                 time.sleep(interval)
 
             except KeyboardInterrupt:

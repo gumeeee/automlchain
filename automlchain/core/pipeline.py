@@ -8,12 +8,10 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from .config import PipelineConfig, ProviderConfig
-from .exceptions import AutoMLChainError
 
 if TYPE_CHECKING:
     from ..datasets.manager import DatasetManager, Dataset
     from ..providers.base import BaseProvider
-    from ..providers.registry import ProviderRegistry
     from ..training.orchestrator import TrainingOrchestrator, TrainingJob
     from ..evaluation.suite import EvaluationSuite, EvalResult
     from ..prompts.engine import PromptEngine, PromptTemplate

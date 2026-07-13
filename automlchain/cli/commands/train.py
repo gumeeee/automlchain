@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import os
 import sys
-from typing import Any
 
 import click
 
@@ -99,7 +97,7 @@ def train_command(
     Example:
         $ automlchain train --dataset data.jsonl --model meta/llama-3-8b
     """
-    click.echo(f"Starting training job...")
+    click.echo("Starting training job...")
     click.echo(f"  Dataset: {dataset_path}")
     click.echo(f"  Provider: {provider_name}")
     click.echo(f"  Model: {model_name}")
@@ -142,7 +140,7 @@ def train_command(
             model=model_name,
         )
 
-        click.echo(f"\nTraining job started!")
+        click.echo("\nTraining job started!")
         click.echo(f"  Job ID: {job.job_id}")
 
         if output_json:
@@ -152,14 +150,13 @@ def train_command(
         if wait:
             click.echo("\nWaiting for training to complete...")
             from ...core.exceptions import AutoMLChainTimeoutError
-            from ...training.jobs import TrainingResult
 
             try:
                 result = pipeline.training_orchestrator.wait_for_completion(
                     job.job_id,
                     timeout=7200,  # 2 hours
                 )
-                click.echo(f"\nTraining completed!")
+                click.echo("\nTraining completed!")
                 click.echo(f"  Duration: {result.duration_seconds:.1f}s")
                 if result.cost:
                     click.echo(f"  Cost: ${result.cost:.4f}")

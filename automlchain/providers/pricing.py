@@ -10,7 +10,6 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import structlog
 
@@ -146,7 +145,6 @@ class PricingProvider:
         if cache_dir:
             self._cache_dir = cache_dir
         else:
-            import os
             self._cache_dir = Path.home() / ".automlchain" / "pricing"
             self._cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -258,7 +256,7 @@ class PricingProvider:
         import httpx
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient():
                 # Replicate doesn't have a public pricing API endpoint
                 # We would need to scrape or maintain manually
                 # For now, just use defaults
@@ -280,11 +278,10 @@ class PricingProvider:
                 )
 
                 if response.status_code == 200:
-                    models = response.json()
-                    for model in models:
-                        model_id = model.get("id", "")
-                        # Extract pricing from model info if available
-                        # Together API may not expose pricing directly
+                    # TODO: Extract pricing from model info when API exposes it
+                    # models = response.json()
+                    # for model in models:
+                    #     model_id = model.get("id", "")
                     return False
                 return False
 

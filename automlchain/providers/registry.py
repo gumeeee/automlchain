@@ -124,7 +124,7 @@ class ProviderRegistry:
 
 
 # Register built-in providers
-from .replicate import ReplicateProvider
+from .replicate import ReplicateProvider  # noqa: E402
 
 ProviderRegistry.register("replicate", ReplicateProvider)
 
