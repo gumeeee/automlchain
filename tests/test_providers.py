@@ -114,3 +114,75 @@ class TestPricingProvider:
             inference_cost=2.0,
         )
         assert pricing.get_training_cost("custom/model") == 1.0
+
+
+class TestLocalProvider:
+    """Tests for LocalProvider."""
+
+    def test_create_provider(self):
+        """Test provider creation."""
+        from automlchain.providers import LocalProvider
+
+        provider = LocalProvider(model="TinyLlama/TinyLlama-1.1B")
+        assert provider.name == "local"
+        assert provider.model == "TinyLlama/TinyLlama-1.1B"
+
+    def test_provider_not_requires_api_key(self):
+        """Test that LocalProvider works without API key."""
+        from automlchain.providers import LocalProvider
+
+        provider = LocalProvider()
+        assert provider.api_key is None or provider.api_key == "local"
+
+    def test_train_without_dependencies(self):
+        """Test train() handles missing dependencies."""
+        from automlchain.providers import LocalProvider
+
+        provider = LocalProvider()
+
+        # Check if dependencies are available
+        try:
+            import transformers  # noqa: F401
+            import torch  # noqa: F401
+            dependencies_available = True
+        except ImportError:
+            dependencies_available = False
+
+        if not dependencies_available:
+            # Should raise ImportError without dependencies
+            with pytest.raises(ImportError):
+                provider.train(
+                    model="TinyLlama/TinyLlama-1.1B",
+                    training_file="nonexistent.jsonl",
+                )
+        else:
+            # Should raise TrainingError for missing file
+            with pytest.raises(Exception):  # Could be FileNotFoundError or TrainingError
+                provider.train(
+                    model="TinyLlama/TinyLlama-1.1B",
+                    training_file="nonexistent.jsonl",
+                )
+
+
+class TestTogetherProvider:
+    """Tests for TogetherProvider."""
+
+    def test_create_provider_requires_api_key(self):
+        """Test that TogetherProvider requires API key."""
+        from automlchain.providers import ProviderRegistry
+
+        with pytest.raises(ValueError, match="API key required"):
+            ProviderRegistry.get("together")
+
+    def test_together_registered(self):
+        """Test that Together provider is registered."""
+        providers = ProviderRegistry.list_providers()
+        assert "together" in providers
+
+    def test_together_optional_import(self):
+        """Test that TogetherProvider handles missing package gracefully."""
+        from automlchain.providers import ProviderRegistry
+
+        # Try to get together - will fail without package
+        # but won't crash the module
+        assert ProviderRegistry.is_registered("together")

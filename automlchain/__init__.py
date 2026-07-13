@@ -78,6 +78,17 @@ from .providers import (
     MockProvider,
 )
 
+# Optional providers (may not be installed)
+try:
+    from .providers import TogetherProvider
+except ImportError:
+    TogetherProvider = None  # type: ignore
+
+try:
+    from .providers import LocalProvider
+except ImportError:
+    LocalProvider = None  # type: ignore
+
 __all__ = [
     # Version
     "__version__",
@@ -129,4 +140,6 @@ __all__ = [
     "ProviderRegistry",
     "ReplicateProvider",
     "MockProvider",
+    "TogetherProvider",  # May be None if together not installed
+    "LocalProvider",  # May be None if dependencies not installed
 ]

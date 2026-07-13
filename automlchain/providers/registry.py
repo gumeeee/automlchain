@@ -128,6 +128,15 @@ from .replicate import ReplicateProvider  # noqa: E402
 
 ProviderRegistry.register("replicate", ReplicateProvider)
 
-# Phase 2 providers (imported but not registered by default)
-# from .together import TogetherProvider
-# from .anyscale import AnyscaleProvider
+# Register Together provider
+try:
+    from .together import TogetherProvider  # noqa: E402
+
+    ProviderRegistry.register("together", TogetherProvider)
+except ImportError:
+    logger.warning("together_not_installed", message="Together AI provider not available. Install with: pip install together")
+
+# Register Local provider (always available)
+from .local import LocalProvider  # noqa: E402
+
+ProviderRegistry.register("local", LocalProvider)

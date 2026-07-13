@@ -9,6 +9,17 @@ from .replicate import ReplicateProvider, ReplicateInferenceClient
 from .mock import MockProvider
 from .pricing import PricingProvider, PricingCache
 
+# Optional providers (may not be installed)
+try:
+    from .together import TogetherProvider
+except ImportError:
+    TogetherProvider = None  # type: ignore
+
+try:
+    from .local import LocalProvider
+except ImportError:
+    LocalProvider = None  # type: ignore
+
 __all__ = [
     # Base classes
     "BaseProvider",
@@ -21,6 +32,8 @@ __all__ = [
     "ReplicateProvider",
     "ReplicateInferenceClient",
     "MockProvider",
+    "TogetherProvider",  # May be None if not installed
+    "LocalProvider",  # May be None if not installed
     # Pricing
     "PricingProvider",
     "PricingCache",
