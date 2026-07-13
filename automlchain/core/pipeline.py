@@ -10,7 +10,8 @@ import structlog
 from .config import PipelineConfig, ProviderConfig
 
 if TYPE_CHECKING:
-    from ..datasets.manager import DatasetManager, Dataset
+    from ..datasets.manager import DatasetManager
+    from ..datasets.types import Dataset
     from ..providers.base import BaseProvider
     from ..training.orchestrator import TrainingOrchestrator, TrainingJob
     from ..evaluation.suite import EvaluationSuite, EvalResult
@@ -252,6 +253,7 @@ class AutoMLPipeline:
         self,
         *,
         dataset: Dataset | None = None,
+        training_file: str | Path | None = None,
         template: PromptTemplate | None = None,
         **kwargs: Any,
     ) -> TrainingJob:
@@ -259,6 +261,8 @@ class AutoMLPipeline:
 
         Args:
             dataset: Dataset to train on. Uses current dataset if None.
+            training_file: Path to training file (alternative to dataset).
+                          Creates Dataset automatically from file.
             template: Prompt template to use. Uses current template if None.
             **kwargs: Override hyperparameters.
 
@@ -271,10 +275,25 @@ class AutoMLPipeline:
         dataset = dataset or self._current_dataset
         template = template or self._current_template
 
+        # If training_file is provided, create Dataset from it
+        if training_file is not None and dataset is None:
+            from pathlib import Path
+            from ..datasets.manager import DatasetManager
+
+            file_path = Path(training_file)
+            if file_path.exists():
+                # Load dataset from file using manager.upload
+                manager = DatasetManager()
+                dataset = manager.upload(str(file_path))
+            else:
+                # It's a URL or identifier, use as-is
+                from ..datasets.types import Dataset
+                dataset = Dataset(data=[{"text": str(training_file)}], format="string")
+
         if dataset is None:
             from .exceptions import ValidationError
             raise ValidationError(
-                "No dataset provided. Call upload_dataset() first.",
+                "No dataset provided. Provide dataset= or training_file=.",
                 field="dataset",
             )
 
