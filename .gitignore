@@ -85,8 +85,9 @@ ipython_config.py
 # pipenv
 Pipfile.lock
 
-# poetry
-poetry.lock
+# uv
+uv.lock
+.venv/
 
 # PEP 582
 __pypackages__/

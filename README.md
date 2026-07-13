@@ -4,6 +4,8 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://github.com/gumeeee/automlchain/actions/workflows/tests.yml/badge.svg)](https://github.com/gumeeee/automlchain/actions)
+[![codecov](https://codecov.io/gh/gumeeee/automlchain/branch/main/graph/badge.svg)](https://codecov.io/gh/gumeeee/automlchain)
 
 ## Overview
 
@@ -20,6 +22,7 @@ AutoMLChain orchestrates the complete fine-tuning workflow — from dataset uplo
 - **Training Orchestration** - Unified API for multiple fine-tuning providers
 - **Auto-Evaluation** - Built-in metrics (RMSE, F1, MAE, Accuracy)
 - **CLI Interface** - Command-line tools for training and monitoring
+- **Dynamic Pricing** - Real-time cost estimation and tracking
 - **Extensible** - Plugin system for new providers and metrics
 
 ## Quick Start
@@ -27,6 +30,10 @@ AutoMLChain orchestrates the complete fine-tuning workflow — from dataset uplo
 ### Installation
 
 ```bash
+# Using uv (recommended)
+uv pip install automlchain
+
+# Or using pip
 pip install automlchain
 ```
 
@@ -35,18 +42,21 @@ pip install automlchain
 ```python
 from automlchain import AutoMLPipeline
 
-# Initialize pipeline
+# Initialize pipeline with Replicate
 pipeline = AutoMLPipeline(provider="replicate")
 
 # Upload dataset
 pipeline.upload_dataset("reviews.jsonl")
 
 # Train model
-result = pipeline.train(
+job = pipeline.train(
     model="meta/llama-3-8b-instruct",
     epochs=3,
     learning_rate=1e-4,
 )
+
+# Wait for completion
+result = pipeline.training_orchestrator.wait_for_completion(job.job_id)
 
 # Deploy and use
 model = pipeline.deploy()
@@ -56,6 +66,9 @@ response = model.predict("This product is amazing!")
 ### CLI
 
 ```bash
+# Install CLI
+uv pip install automlchain
+
 # Start training
 automlchain train --dataset data.jsonl --model meta/llama-3-8b
 
@@ -63,7 +76,10 @@ automlchain train --dataset data.jsonl --model meta/llama-3-8b
 automlchain status --job-id abc123
 
 # Cancel job
-automlchain cancel --job-id abc123
+automlchain cancel --job-id abc123 --force
+
+# Evaluate predictions
+automlchain evaluate --predictions preds.jsonl --references refs.jsonl
 ```
 
 ## Supported Providers
@@ -71,29 +87,41 @@ automlchain cancel --job-id abc123
 | Provider | Status | Notes |
 |----------|--------|-------|
 | Replicate | ✅ Phase 1 | Primary provider for MVP |
+| Mock | ✅ | For testing without API calls |
 | Together AI | 🔜 Phase 2 | Planned |
 | Anyscale | 🔜 Phase 2 | Planned |
 
 ## Supported Metrics (MVP)
 
-| Metric | Use Case |
-|--------|----------|
-| RMSE | Regression (ratings, scores) |
-| MAE | Regression (absolute error) |
-| F1 | Classification (precision/recall balance) |
-| Accuracy | Classification (overall accuracy) |
+| Metric | Type | Use Case |
+|--------|------|----------|
+| RMSE | Regression | Ratings, scores (lower is better) |
+| MAE | Regression | Absolute error (lower is better) |
+| F1 | Classification | Precision/recall balance |
+| Accuracy | Classification | Overall accuracy |
 
 ## Architecture
 
 ```
 automlchain/
-├── core/           # Pipeline and configuration
-├── datasets/       # Dataset management
-├── prompts/       # Prompt templates
+├── core/           # Pipeline, configuration, exceptions
+├── datasets/       # Dataset management, validation, parsing
+│   ├── formats/    # Format-specific parsers
+│   └── validators/ # Data validation
+├── evaluation/     # Metrics and evaluation suite
+│   └── metrics/    # Individual metric implementations
+├── prompts/        # Prompt templates and engine
+├── providers/      # Provider abstraction layer
+│   ├── base.py     # Base provider interface
+│   ├── mock.py     # Mock provider for testing
+│   ├── replicate.py # Replicate implementation
+│   └── pricing.py  # Dynamic cost estimation
 ├── training/       # Training orchestration
-├── evaluation/     # Evaluation metrics
-├── providers/      # Provider abstraction
-└── cli/           # Command-line interface
+│   ├── callbacks.py # Progress callbacks
+│   ├── jobs.py     # Job state management
+│   └── orchestrator.py # Training coordination
+└── cli/            # Command-line interface
+    └── commands/   # CLI command implementations
 ```
 
 ## Requirements
@@ -124,36 +152,69 @@ AutoMLChain supports configuration from multiple sources (priority high to low):
 
 ## Development
 
+> **Note:** This project uses [uv](https://github.com/astral-sh/uv) for fast dependency management.
+
 ```bash
 # Clone repository
-git clone https://github.com/automlchain/automlchain.git
+git clone https://github.com/gumeeee/automlchain.git
 cd automlchain
 
-# Install dependencies
+# Install using uv (recommended)
+uv sync
+
+# Activate virtual environment
+source .venv/bin/activate
+
+# Install dev dependencies
+uv sync --dev
+
+# Or using pip
 pip install -e ".[dev]"
 
 # Run tests
 pytest
+
+# Run tests with coverage
+pytest --cov=automlchain
 
 # Format code
 ruff format .
 
 # Lint
 ruff check .
+
+# Type check
+mypy automlchain/
+```
+
+### Testing
+
+```bash
+# Unit tests
+pytest tests/
+
+# Smoke tests (interactive notebook)
+jupyter notebook notebooks/smoke_tests.ipynb
+
+# Real training tests (requires API keys)
+jupyter notebook notebooks/real_training_tests.ipynb
 ```
 
 ## Roadmap
 
-### Phase 1: MVP (Current)
+### Phase 1: MVP ✅
 - ✅ Dataset upload and validation
 - ✅ Training via Replicate API
 - ✅ Evaluation with built-in metrics
 - ✅ CLI (train, status, cancel)
 - ✅ Deploy and inference
+- ✅ Dynamic pricing
+- ✅ Unit tests and smoke tests
 
 ### Phase 2: Auto-Optimization
 - Hyperparameter search (Grid, Random, Bayesian)
 - Budget management
+- Early stopping
 - Multi-provider abstraction
 - Advanced metrics (ROUGE, BLEU)
 
