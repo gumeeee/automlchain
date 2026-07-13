@@ -18,6 +18,7 @@ class ProviderType(str, Enum):
     REPLICATE = "replicate"
     TOGETHER = "together"  # Phase 2
     ANYSCALE = "anyscale"  # Phase 2
+    LOCAL = "local"  # Local GPU training
 
 
 class FineTuningMethod(str, Enum):

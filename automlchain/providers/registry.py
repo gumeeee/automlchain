@@ -82,15 +82,15 @@ class ProviderRegistry:
 
         provider_class = cls._providers[name]
 
-        # Require API key
-        if api_key is None:
+        # Require API key for cloud providers, not for local
+        if api_key is None and name != "local":
             raise ValueError(
                 f"API key required for provider '{name}'. "
                 f"Set the environment variable for this provider."
             )
 
         # Create instance
-        instance = provider_class(api_key=api_key, **kwargs)
+        instance = provider_class(api_key=api_key or "local", **kwargs)
         cls._instances[cache_key] = instance
 
         logger.info("provider_initialized", name=name)

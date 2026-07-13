@@ -62,6 +62,9 @@ class AutoMLPipeline:
             # Map string to ProviderType
             if provider.lower() == "mock":
                 provider_config = ProviderConfig(provider_type=ProviderType.REPLICATE, api_key="mock-key")
+            elif provider.lower() == "local":
+                # Local provider doesn't need API key
+                provider_config = ProviderConfig(provider_type=ProviderType.LOCAL, api_key="local")
             else:
                 provider_config = ProviderConfig(provider_type=ProviderType(provider))
             provider_name = provider
