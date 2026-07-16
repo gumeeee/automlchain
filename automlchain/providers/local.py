@@ -218,6 +218,7 @@ class LocalProvider(BaseProvider):
             "    load_kwargs = {",
             "        'pretrained_model_name_or_path': " + model_name_quoted + ",",
             "        'trust_remote_code': True,",
+            "        'device_map': 'auto',",
             "",
             "        'torch_dtype': torch.float16,",
             "    }",
