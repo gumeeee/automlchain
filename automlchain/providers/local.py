@@ -265,7 +265,7 @@ class LocalProvider(BaseProvider):
             f"        warmup_steps={warmup_steps},",
             "        logging_steps=10,",
             "        save_steps=100,",
-            '        evaluation_strategy="steps",',
+            '        eval_strategy="steps",',
             "        eval_steps=100,",
             f"        fp16=torch.cuda.is_available(),",
             '        remove_unused_columns=False,',
