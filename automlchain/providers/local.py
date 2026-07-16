@@ -267,7 +267,7 @@ class LocalProvider(BaseProvider):
             "        save_steps=100,",
             '        evaluation_strategy="steps",',
             "        eval_steps=100,",
-            f"        fp16=torch.cuda.is_available() and " + str(use_qlora).lower() + ",",
+            f"        fp16=torch.cuda.is_available(),",
             '        remove_unused_columns=False,',
             "        ddp_find_unused_parameters=False,",
             "    )",
