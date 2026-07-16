@@ -121,14 +121,15 @@ class LocalProvider(BaseProvider):
 
         # Use triple quotes for strings that might have special characters
         model_name_quoted = '"""' + model_name + '"""'
-        max_seq_length = config.get("max_seq_length", 2048)
+        # T4-optimized defaults: small batch + gradient accumulation for memory efficiency
+        max_seq_length = config.get("max_seq_length", 128)
         epochs = config.get("epochs", 3)
-        batch_size = config.get("batch_size", 4)
+        batch_size = config.get("batch_size", 1)
         learning_rate = config.get("learning_rate", 1e-4)
-        lora_rank = config.get("lora_rank", 16)
-        lora_alpha = config.get("lora_alpha", 32)
+        lora_rank = config.get("lora_rank", 8)
+        lora_alpha = config.get("lora_alpha", 16)
         warmup_steps = config.get("warmup_steps", 100)
-        grad_accum = config.get("gradient_accumulation_steps", 4)
+        grad_accum = config.get("gradient_accumulation_steps", 8)
         use_qlora = self.use_qlora
 
         # Build script as regular string (not f-string to avoid escaping issues)
@@ -217,26 +218,47 @@ class LocalProvider(BaseProvider):
             "    load_kwargs = {",
             "        'pretrained_model_name_or_path': " + model_name_quoted + ",",
             "        'trust_remote_code': True,",
+            "",
+            "        'torch_dtype': torch.float16,",
             "    }",
             "",
         ]
 
         if use_qlora:
+            # Always set quantization config - transformers handles CUDA check internally
             script_lines.extend([
                 "    if torch.cuda.is_available():",
-                "        from transformers import BitsAndBytesConfig",
-                '        print("Using QLoRA (4-bit quantization)...")',
-                "        load_kwargs['quantization_config'] = BitsAndBytesConfig(",
-                "            load_in_4bit=True,",
-                "            bnb_4bit_compute_dtype=torch.float16,",
-                "            bnb_4bit_use_double_quant=True,",
-                '            bnb_4bit_quant_type="nf4",',
-                "        )",
+                "        try:",
+                "            from transformers import BitsAndBytesConfig",
+                "            import bitsandbytes",
+                '            print("bitsandbytes version:", bitsandbytes.__version__)',
+                '            print("Using QLoRA (4-bit quantization)...")',
+                "            bnb_config = BitsAndBytesConfig(",
+                "                load_in_4bit=True,",
+                "                bnb_4bit_compute_dtype=torch.float16,",
+                "                bnb_4bit_use_double_quant=True,",
+                '                bnb_4bit_quant_type="nf4",',
+                "            )",
+                "            load_kwargs['quantization_config'] = bnb_config",
+                '            print("quantization_config set successfully")',
+                "        except ImportError as e:",
+                '            print(f"WARNING: bitsandbytes not available: {e}")',
+                '            print("Training will continue without quantization - may cause OOM!")',
             ])
 
         script_lines.extend([
             "",
             "    model = AutoModelForCausalLM.from_pretrained(**load_kwargs)",
+            "",
+            "    # Check model memory and quantization status",
+            "    if torch.cuda.is_available():",
+            "        mem_allocated = torch.cuda.memory_allocated() / 1e9",
+            "        mem_reserved = torch.cuda.memory_reserved() / 1e9",
+            '        print(f"GPU memory: {mem_allocated:.2f}GB allocated, {mem_reserved:.2f}GB reserved")',
+            "        if hasattr(model, 'is_quantized') and callable(model.is_quantized):",
+            '            print(f"Model is quantized: {model.is_quantized()}")',
+            "        elif hasattr(model, 'hf_quantizer'):",
+            '            print(f"Quantization method: {model.hf_quantizer}")',
             "",
             "    # Setup LoRA",
             '    print("Setting up LoRA...")',
@@ -370,19 +392,19 @@ class LocalProvider(BaseProvider):
                     f.write(json.dumps(item) + "\n")
             training_file = str(temp_file)
 
-        # Build config
+        # Build config - T4-optimized defaults
         config = {
             "model": model,
             "training_file": str(training_file),
             "epochs": hyperparameters.get("epochs", 3),
-            "batch_size": hyperparameters.get("batch_size", 4),
+            "batch_size": hyperparameters.get("batch_size", 1),
             "learning_rate": hyperparameters.get("learning_rate", 1e-4),
-            "lora_rank": hyperparameters.get("lora_rank", 16),
-            "lora_alpha": hyperparameters.get("lora_alpha", 32),
+            "lora_rank": hyperparameters.get("lora_rank", 8),
+            "lora_alpha": hyperparameters.get("lora_alpha", 16),
             "warmup_steps": hyperparameters.get("warmup_steps", 100),
-            "max_seq_length": hyperparameters.get("max_seq_length", 2048),
+            "max_seq_length": hyperparameters.get("max_seq_length", 128),
             "gradient_accumulation_steps": hyperparameters.get(
-                "gradient_accumulation_steps", 4
+                "gradient_accumulation_steps", 8
             ),
             **kwargs,
         }
@@ -390,10 +412,23 @@ class LocalProvider(BaseProvider):
         # Create training script
         script_path = self._create_training_script(job_id, config)
 
+        # Validate script syntax before execution
+        try:
+            import py_compile
+            py_compile.compile(str(script_path), doraise=True)
+            logger.info("script_validated", job_id=job_id, script=str(script_path))
+        except py_compile.PyCompileError as e:
+            raise TrainingError(
+                f"Training script has syntax errors: {e}",
+                provider="local",
+            )
+
         # Prepare environment
         env = os.environ.copy()
         if self.gpu:
             env["CUDA_VISIBLE_DEVICES"] = "0"
+            # Optimize CUDA memory allocation for better OOM handling
+            env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:512"
 
         # Start subprocess
         try:
