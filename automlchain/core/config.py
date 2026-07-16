@@ -65,6 +65,7 @@ class HyperParams:
     warmup_steps: int = 100
     max_seq_length: int = 2048
     weight_decay: float = 0.01
+    gradient_accumulation_steps: int = 8
 
     def __post_init__(self) -> None:
         """Validate hyperparameter ranges."""
@@ -101,6 +102,7 @@ class HyperParams:
             "warmup_steps": self.warmup_steps,
             "max_seq_length": self.max_seq_length,
             "weight_decay": self.weight_decay,
+            "gradient_accumulation_steps": self.gradient_accumulation_steps,
         }
 
 

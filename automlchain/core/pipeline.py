@@ -304,14 +304,24 @@ class AutoMLPipeline:
 
         hyperparam_fields = {
             "learning_rate", "lora_rank", "lora_alpha", "lora_dropout",
-            "batch_size", "epochs", "warmup_steps", "max_seq_length", "weight_decay"
+            "batch_size", "epochs", "warmup_steps", "max_seq_length", "weight_decay",
+            "gradient_accumulation_steps",  # Also allow this field
         }
 
         # Get model - from kwargs first, then config
         model = kwargs.pop("model", None) or self.config.provider.model
 
-        hyperparams_kwargs = {k: v for k, v in kwargs.items() if k in hyperparam_fields}
-        hyperparams = HyperParams(**hyperparams_kwargs) if hyperparams_kwargs else self.config.hyperparameters
+        # Handle hyperparameters - can be passed as dict or individual fields
+        hyperparams_dict = kwargs.pop("hyperparameters", {})
+        if isinstance(hyperparams_dict, dict):
+            # Merge with any individual hyperparam fields from kwargs
+            for field in hyperparam_fields:
+                if field in kwargs:
+                    hyperparams_dict[field] = kwargs.pop(field)
+        else:
+            hyperparams_dict = {}
+
+        hyperparams = HyperParams(**hyperparams_dict) if hyperparams_dict else self.config.hyperparameters
 
         job = self.training_orchestrator.train(
             dataset=dataset,
