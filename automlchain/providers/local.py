@@ -702,6 +702,7 @@ class LocalProvider(BaseProvider):
                 "text-generation",
                 model=model,
                 tokenizer=tokenizer,
+                max_length=None,  # Avoid conflict with max_new_tokens
             )
 
             result = pipe(
