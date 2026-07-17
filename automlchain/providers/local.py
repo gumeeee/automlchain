@@ -139,6 +139,7 @@ class LocalProvider(BaseProvider):
             "import json",
             "import os",
             "import sys",
+            "import time",
             "",
             "# Training configuration",
             f'config = {json.dumps(config, indent=2)}',
